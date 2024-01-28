@@ -11,7 +11,6 @@ COMP3702 Assignment 1 "Dragon Game" Support Code
 Last updated by njc 07/08/23
 """
 
-
 class GameEnv:
     """
     Instance of an Untitled Dragon Game environment. Stores the dimensions of the environment, initial player position,
@@ -147,7 +146,6 @@ class GameEnv:
 
         self.gem_positions = gem_positions
         self.grid_data = grid_data
-
         self.all_gems_tuple = tuple([1 for _ in range(self.n_gems)])    # !!! added
 
     def get_init_state(self):
@@ -155,7 +153,7 @@ class GameEnv:
         Get a state representation instance for the initial state.
         :return: initial state
         """
-        return GameState(self.init_row, self.init_col, tuple(0 for g in self.gem_positions))
+        return GameState(self.init_row, self.init_col, tuple(0 for _ in self.gem_positions))
 
     def perform_action(self, state, action):
         """
@@ -271,11 +269,10 @@ class GameEnv:
         :param state: current GameState
         :return: True if solved, False otherwise
         """
-        all_gems_collected = True
         for g in state.gem_status:
             if g == 0:
-                all_gems_collected = False
-        return state.row == self.exit_row and state.col == self.exit_col and all_gems_collected
+                return False
+        return state.row == self.exit_row and state.col == self.exit_col
 
     def is_game_over(self, state):
         """

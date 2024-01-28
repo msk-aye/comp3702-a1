@@ -39,5 +39,8 @@ class GameState:
     def deepcopy(self):
         return GameState(self.row, self.col, self.gem_status)
 
+    def get_pos(self):
+        return (self.row, self.col)
 
-
+    def n_uncollected_gems(self):
+        return sum([i == 0 for i in self.gem_status])
