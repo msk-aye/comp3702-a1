@@ -1,197 +1,311 @@
+import sys
+import time
+import itertools
+
 from game_env import GameEnv
-import heapq
-import functools
+from game_state import GameState
+import transition as tr
 
 """
 solution.py
 
-Where the UCS and A* search algorithms are implemented.
+This file is a template you should use to implement your solution.
 
-COMP3702 Assignment 1 "Dragon Game" Support Code
+You should implement each of the method stubs below. You may add additional methods and/or classes to this file if you 
+wish. You may also create additional source files and import to this file if you wish.
+
+COMP3702 Assignment 2 "Dragon Game" Support Code
+
+Last updated by njc 30/08/23
 """
-
-class Node:
-
-    def __init__(self, state, parent, previousAction, pathCost, gameEnv):
-        self.state = state
-        self.gameEnv = gameEnv
-        self.parent = parent
-        self.previousAction = previousAction
-        self.pathCost = pathCost
-
-    def __eq__(self, other):
-        return self.state == other.state and self.pathCost == other.pathCost
-
-    def __hash__(self):
-        return hash(self.state)
-
-    def __lt__(self, other):
-        return self.pathCost < other.pathCost
-
-    def get_pos(self):
-        return self.state.get_pos()
-
-    def get_actions(self):
-        actions = []
-        node = self
-
-        while (node.parent):
-            actions.append(node.previousAction)
-            node = node.parent
-
-        return actions[::-1]
-
-    def get_successors(self):
-        children = []
-        for action in self.gameEnv.ACTIONS:
-            valid, newState = self.gameEnv.perform_action(self.state, action)
-
-            if valid:
-                children.append([newState, action])
-
-        return children
 
 
 class Solver:
 
     def __init__(self, game_env: GameEnv):
-        self.gameEnv = game_env
-        self.initState = self.gameEnv.get_init_state()
-        self.initNode = Node(self.initState, None, None, 0, self.gameEnv)
+        # TODO: Define any class instance variables you require (e.g. dictionary mapping state to VI value) here.
 
-    # === Uniform Cost Search ==========================================================================================
-    def search_ucs(self, verbose = True):
+        self.game_env = game_env
+
+    @staticmethod
+    def testcases_to_attempt():
         """
-        Find a path which solves the environment using Uniform Cost Search (UCS).
+        Return a list of testcase numbers you want your solution to be evaluated for.
         """
-        container = [(0, self.initNode)]
-        heapq.heapify(container)
-        visited = {self.gameEnv.get_init_state(): 0}
-        n_expanded = 0
+        return [1, 2, 3, 4, 5]
 
-        while len(container) > 0:
-            n_expanded += 1
-            _, node = heapq.heappop(container)
+    # === Value Iteration ==============================================================================================
 
-            # check if this state is the goal
-            if self.gameEnv.is_solved(node.state):
-                if verbose:
-                    print(f'Visited Nodes: {len(visited)},\t\tExpanded Nodes: {n_expanded},\t\t'
-                        f'Nodes in Container: {len(container)}')
-                    print(f'Cost of Path (with Costly Moves): {node.pathCost}')
-                return node.get_actions()
-
-            # add unvisited (or visited at higher path cost) successors to container
-            successors = node.get_successors()
-            for state, action in successors:
-                pathCost = node.pathCost + self.gameEnv.ACTION_COST[action]
-                if state not in visited.keys() or pathCost < visited[state]:
-                    newNode = Node(state, node, action, pathCost, self.gameEnv)
-                    visited[state] = newNode.pathCost
-                    heapq.heappush(container, (newNode.pathCost, newNode))
-
-        return None
-
-    # === A* Search ====================================================================================================
-    def preprocess_heuristic(self):
+    def vi_initialise(self):
         """
-        Perform pre-processing (e.g. pre-computing repeatedly used values) necessary for your heuristic,
+        Initialise any variables required before the start of Value Iteration.
         """
-        # Implement code for any preprocessing required by your heuristic here (if your heuristic)
+        # TODO: Implement any initialisation for Value Iteration (e.g. building a list of states) here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
 
-    @functools.cache
-    def estimate_cost(self, start, end):
+        self.states = set(GameState(pos[0], pos[1], gem) for pos in self.possible_player_positions()
+                          for gem in self.possible_gem_states())
+        self.absorbing_state = GameState(-1, -1, (1,))
+        self.states.add(self.absorbing_state)
+        self.states_cache = dict()
+        self.values = {state: 0.0 for state in self.states}
+        self.policy = {state: self.game_env.WALK_RIGHT for state in self.states}
+        self.converged = False
+
+
+    def vi_is_converged(self):
         """
-        Gives a rough estimate of the cost of the player moving from (start) to (end)
+        Check if Value Iteration has reached convergence.
+        :return: True if converged, False otherwise
         """
-        startRow, startCol = start
-        endRow, endCol = end
+        # TODO: Implement code to check if Value Iteration has reached convergence here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
 
-        rowDiff = endRow - startRow
-        colDiff = abs(endCol - startCol)
+        if self.max_diff_vi < self.game_env.epsilon:
+            self.converged = True
+            
+        return self.converged
 
-        # Same row, meaning cost is equal to walking
-        if rowDiff == 0:
-            cost = colDiff
-
-        # End row is higher, meaning cost is equal to jumping + walking
-        elif rowDiff < 0:
-            rowDiff = abs(rowDiff)
-            cost = colDiff + (rowDiff * 2)
-
-        # End row is lower, meaning cost is equal to gliding + dropping or walking
-        elif rowDiff > 0:
-            colDiff = colDiff // 3
-            colRem =  colDiff % 3
-
-            if colDiff <= rowDiff:
-                if colRem == 1:
-                    cost = (colDiff * 1.2) + (colRem * 0.7) + ((rowDiff - colDiff) * 0.5 / 3)
-                else:
-                    cost = (colDiff * 1.2) + colRem + ((rowDiff - colDiff - (colRem/2)) * 0.5 / 3)
-
-            else:
-                rowDiff = rowDiff // 3
-                rowRem = rowDiff % 3
-                if rowRem == 1:
-                    cost = (rowDiff * 0.2) + (rowRem * -0.3) + colDiff
-                else:
-                    cost = (rowDiff * 0.2) + colDiff
-
-        return cost
-
-    @functools.cache
-    def compute_heuristic(self, state):
+    def vi_iteration(self):
         """
-        Compute a heuristic value h(n) for the given state.
+        Perform a single iteration of Value Iteration (i.e. loop over the state space once).
         """
-        playerPos = state.get_pos()
-        targetPos = self.gameEnv.exit_row, self.gameEnv.exit_col
-        costToPlayer = 0
-        costToTarget = 0
-        gemCount = state.n_uncollected_gems()
+        # TODO: Implement code to perform a single iteration of Value Iteration here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
 
-        for gemPos in self.gameEnv.gem_positions:
-            if state.gem_status[self.gameEnv.gem_positions.index((gemPos[0], gemPos[1]))] == 0:
-                costToPlayer += self.estimate_cost(playerPos, gemPos)
-                costToTarget += self.estimate_cost(gemPos, targetPos)
+        self.new_policy = dict()
+        self.max_diff_vi = 0
 
-        if gemCount != 0:
-            return (costToPlayer + costToTarget) / gemCount
+        for state in self.states:
 
-        else:
-            return self.estimate_cost(playerPos, targetPos)
+            best_value = -float("inf")
+            best_action = None
 
-    def search_a_star(self, verbose = True):
+            for action in GameEnv.ACTIONS:
+                total = 0
+
+                # Check if combination has appeared before and is stored in the cache
+                if ((state, action) in self.states_cache.keys() and self.states_cache[(state, action)] != None):
+                    for next_state, reward, prob in self.states_cache[(state, action)]:
+
+                        if self.is_absorbing(next_state):
+                            best_action = None
+                            best_value = 0
+                            break
+
+                        total += prob * (reward + (self.game_env.gamma * self.values[next_state]))
+
+                    if total > best_value:
+                        best_value = total
+                        best_action = action
+
+                elif (self.game_env.perform_action(state, action, self.game_env.episode_seed)[0]):
+                    self.states_cache[(state, action)] = tr.get_transition_outcomes(self.game_env, state, action)
+
+                    for next_state, reward, prob in self.states_cache[(state, action)]:
+
+                        if self.is_absorbing(next_state):
+                            best_action = None
+                            best_value = 0
+                            break
+
+                        total += prob * (reward + (self.game_env.gamma * self.values[next_state]))
+
+                    if total > best_value:
+                        best_value = total
+                        best_action = action
+
+            differences = abs(self.values[state] - best_value)
+            if differences > self.max_diff_vi:
+                self.max_diff_vi = differences
+
+            self.values[state] = best_value
+            self.new_policy[state] = best_action
+
+        self.vi_is_converged()
+
+        self.policy = self.new_policy
+
+    def vi_plan_offline(self):
         """
-        Find a path which solves the environment using A* Search.
+        Plan using Value Iteration.
         """
-        # Implement your A* search code here.
+        # In order to ensure compatibility with tester, you should not modify this method
+        self.vi_initialise()
+        while True:
+            self.vi_iteration()
 
-        container = [(0, self.initNode)]
-        heapq.heapify(container)
-        visited = {self.gameEnv.get_init_state(): 0}
-        n_expanded = 0
+            # vi_iteration is always called before vi_is_converged
+            if self.vi_is_converged():
+                break
 
-        while len(container) > 0:
-            n_expanded += 1
-            _, node = heapq.heappop(container)
+    def vi_get_state_value(self, state: GameState):
+        """
+        Retrieve V(s) for the given state.
+        :param state: the current state
+        :return: V(s)
+        """
+        # TODO: Implement code to return the value V(s) for the given state (based on your stored VI values) here. If a
+        #  value for V(s) has not yet been computed, this function should return 0.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
 
-            # check if this state is the goal
-            if self.gameEnv.is_solved(node.state):
-                if verbose:
-                    print(f'Visited Nodes: {len(visited)},\t\tExpanded Nodes: {n_expanded},\t\t'
-                        f'Nodes in Container: {len(container)}')
-                    print(f'Cost of Path (with Costly Moves): {node.pathCost}')
-                return node.get_actions()
+        return self.values[state]
 
-            # add unvisited (or visited at higher path cost) successors to container
-            successors = node.get_successors()
-            for state, action in successors:
-                pathCost = node.pathCost + self.gameEnv.ACTION_COST[action]
-                if state not in visited.keys() or pathCost < visited[state]:
-                    newNode = Node(state, node, action, pathCost, self.gameEnv)
-                    visited[state] = newNode.pathCost
-                    heapq.heappush(container, (newNode.pathCost + self.compute_heuristic(state), newNode))
 
-        return None
+    def vi_select_action(self, state: GameState):
+        """
+        Retrieve the optimal action for the given state (based on values computed by Value Iteration).
+        :param state: the current state
+        :return: optimal action for the given state (element of ROBOT_ACTIONS)
+        """
+        # TODO: Implement code to return the optimal action for the given state (based on your stored VI values) here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
+
+        return self.policy[state]
+
+    def print_policy(self):
+        """
+        Print state: policy action for every state in the state space.
+        """
+        for state, action in self.policy.items():
+            print(state, action)
+
+    # === Policy Iteration =============================================================================================
+
+    def pi_initialise(self):
+        """
+        Initialise any variables required before the start of Policy Iteration.
+        """
+        # TODO: Implement any initialisation for Policy Iteration (e.g. building a list of states) here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
+
+        self.states = set(GameState(pos[0], pos[1], gem) for pos in self.possible_player_positions()
+                          for gem in self.possible_gem_states())
+        self.absorbing_state = GameState(-1, -1, (1,))
+        self.states.add(self.absorbing_state)
+        self.states_cache = dict()
+        self.values = {state: 0.0 for state in self.states}
+        self.policy = {state: self.game_env.WALK_RIGHT for state in self.states}
+        self.converged = False
+
+    def pi_is_converged(self):
+        """
+        Check if Policy Iteration has reached convergence.
+        :return: True if converged, False otherwise
+        """
+        # TODO: Implement code to check if Policy Iteration has reached convergence here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
+
+        if self.max_diff_pi < self.game_env.epsilon:
+            self.converged = True
+
+        return self.converged
+
+    def pi_iteration(self):
+        """
+        Perform a single iteration of Policy Iteration (i.e. perform one step of policy evaluation and one step of
+        policy improvement).
+        """
+        # TODO: Implement code to perform a single iteration of Policy Iteration (evaluation + improvement) here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
+
+        self.new_policy = dict()
+        self.max_diff_pi = 0
+
+        for state in self.states:
+
+            best_value = -float("inf")
+            best_action = None
+
+            for action in GameEnv.ACTIONS:
+                total = 0
+
+                # Check if combination has appeared before and is stored in the cache
+                if ((state, action) in self.states_cache.keys() and self.states_cache[(state, action)] != None):
+                    for next_state, reward, prob in self.states_cache[(state, action)]:
+
+                        if self.is_absorbing(next_state):
+                            best_action = None
+                            best_value = 0
+                            break
+
+                        total += prob * \
+                            (reward + (self.game_env.gamma *
+                             self.values[next_state]))
+
+                    if total > best_value:
+                        best_value = total
+                        best_action = action
+
+                elif (self.game_env.perform_action(state, action, self.game_env.episode_seed)[0]):
+                    self.states_cache[(state, action)] = tr.get_transition_outcomes(self.game_env, state, action)
+
+                    for next_state, reward, prob in self.states_cache[(state, action)]:
+
+                        if self.is_absorbing(next_state):
+                            best_action = None
+                            best_value = 0
+                            break
+
+                        total += prob * (reward + (self.game_env.gamma * self.values[next_state]))
+
+                    if total > best_value:
+                        best_value = total
+                        best_action = action
+
+            differences = abs(self.values[state] - best_value)
+            if differences > self.max_diff_pi:
+                self.max_diff_pi = differences
+
+            self.values[state] = best_value
+            self.new_policy[state] = best_action
+
+        self.pi_is_converged()
+
+        self.policy = self.new_policy
+
+    def pi_plan_offline(self):
+        """
+        Plan using Policy Iteration.
+        """
+        # !!! In order to ensure compatibility with tester, you should not modify this method !!!
+
+        self.pi_initialise()
+        while True:
+            self.pi_iteration()
+
+            # NOTE: pi_iteration is always called before pi_is_converged
+            if self.pi_is_converged():
+                break
+
+    def pi_select_action(self, state: GameState):
+        """
+        Retrieve the optimal action for the given state (based on values computed by Value Iteration).
+        :param state: the current state
+        :return: optimal action for the given state (element of ROBOT_ACTIONS)
+        """
+        # TODO: Implement code to return the optimal action for the given state (based on your stored PI policy) here.
+        # In order to ensure compatibility with tester, you should avoid adding additional arguments to this function.
+
+        return self.policy[state]
+
+    # === Helper Methods ===============================================================================================
+    def possible_player_positions(self):
+        """
+        Return a list of possible player positions
+        :return: list of possible player positions
+        """
+        return [(r, c) for r in range(self.game_env.n_rows) for c in range(self.game_env.n_cols) 
+                if (self.game_env.grid_data[r][c] not in self.game_env.COLLISION_TILES)]
+
+    def possible_gem_states(self):
+        """
+        Return a list of possible gem states
+        :return: list of possible gem states
+        """
+        return tuple(gems for gems in itertools.product([0, 1], repeat=self.game_env.n_gems))
+    
+    def is_absorbing(self, state: GameState):
+        # Check if the given state is absorbing
+        return state.row == -1 or state.col == -1
+

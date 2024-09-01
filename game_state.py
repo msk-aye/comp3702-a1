@@ -3,9 +3,9 @@ game_state.py
 
 This file contains a class representing an Untitled Dragon Game state. You should make use of this class in your solver.
 
-COMP3702 Assignment 1 "Dragon Game" Support Code
+COMP3702 Assignment 2 "Dragon Game" Support Code
 
-Last updated by njc 07/08/23
+Last updated by njc 05/09/23
 """
 
 
@@ -34,13 +34,10 @@ class GameState:
         return hash((self.row, self.col, *self.gem_status))
 
     def __repr__(self):
-        return f'row: {self.row},\t\t col: {self.col},\t\t gem status: {self.gem_status}'
+        return f'{self.row}, {self.col}, {self.gem_status}'
 
     def deepcopy(self):
         return GameState(self.row, self.col, self.gem_status)
 
-    def get_pos(self):
-        return (self.row, self.col)
 
-    def n_uncollected_gems(self):
-        return sum([i == 0 for i in self.gem_status])
+
