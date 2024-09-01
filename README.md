@@ -1,4 +1,8 @@
-# Assignment 2 Support Code
+AI solvers for a maze based "Dragon Game" where the goal is to move a dragon from a start tile to an end tile
+after collecting coins and avoiding obstacles. The solvers are based on AI methods, such as A* serach, UCS, value iteration
+and poilicy iteration. These solutions are designed to find the most efficient path the dragon can take to the end square.
+
+** Below is the readme for the dragon game, which I did not develop **
 
 This is the support code for COMP3702 Assignment 2 "Dragon Game".
 
